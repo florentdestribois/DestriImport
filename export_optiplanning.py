@@ -627,12 +627,39 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
         # Debut du noeud objet
         obj_txt = "\r\n\t\t<" + obj_alias
         needs_close_tag = False  # True si on a ouvert un sous-noeud (Layers/Properties)
+        in_properties = False  # True si on est dans un bloc <Properties>
+        in_layers = False  # True si on est dans un bloc <Layers>
 
         for j in range(lastcol):
             tag = tags[j]
             header = headers[j]
             raw_val = ws.cell(row=i, column=j + 1).value
             cur_val = _format_cell_value(raw_val)
+
+            # Pour les balises de fermeture, on doit toujours les traiter
+            # meme si la valeur est vide
+            if tag == "/Properties":
+                if cur_val != "":
+                    obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
+                if in_properties:
+                    obj_txt += "\r\n\t\t\t</Properties>"
+                    in_properties = False
+                continue
+
+            if tag == "/Layers":
+                if in_layers:
+                    if cur_val != "":
+                        obj_txt += " " + header + "=\"" + cur_val + "\" />"
+                    obj_txt += "\r\n\t\t\t</Layers>"
+                    in_layers = False
+                continue
+
+            if tag == "/Layer":
+                if in_layers:
+                    if cur_val != "":
+                        obj_txt += " " + header + "=\"" + cur_val + "\""
+                    obj_txt += " />"
+                continue
 
             if cur_val == "":
                 continue
@@ -648,13 +675,10 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                     needs_close_tag = True
                 obj_txt += "\r\n\t\t\t<Properties>"
                 obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
+                in_properties = True
 
             elif tag == "Property":
                 obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
-
-            elif tag == "/Properties":
-                obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
-                obj_txt += "\r\n\t\t\t</Properties>"
 
             elif tag == "Layers":
                 # Ouvrir le noeud objet (>) et commencer un bloc Layers
@@ -663,6 +687,7 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                     needs_close_tag = True
                 obj_txt += "\r\n\t\t\t<Layers>"
                 obj_txt += "\r\n\t\t\t\t<Layer " + header + "=\"" + cur_val + "\""
+                in_layers = True
 
             elif tag == "Layer":
                 # Verifier si le tag precedent etait /Layer -> nouveau Layer
@@ -671,13 +696,6 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                     obj_txt += "\r\n\t\t\t\t<Layer " + header + "=\"" + cur_val + "\""
                 else:
                     obj_txt += " " + header + "=\"" + cur_val + "\""
-
-            elif tag == "/Layer":
-                obj_txt += " " + header + "=\"" + cur_val + "\" />"
-
-            elif tag == "/Layers":
-                obj_txt += " " + header + "=\"" + cur_val + "\" />"
-                obj_txt += "\r\n\t\t\t</Layers"
 
         # Fermeture du noeud objet
         if needs_close_tag:
