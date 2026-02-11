@@ -35,6 +35,8 @@ except ImportError:
 # Constantes XML SWOOD
 # ---------------------------------------------------------------------------
 
+APP_VERSION = "1.1"
+
 SWOOD_XMLNS = "http://www.eficad.com//SWOODMat"
 SWOOD_XSD = "http://www.w3.org/2001/XMLSchema"
 SWOOD_XSI = "http://www.w3.org/2001/XMLSchema-instance"
@@ -134,11 +136,12 @@ class EdgeBandSWOOD:
 # ---------------------------------------------------------------------------
 
 def compute_saw_reference(name: str, thickness) -> str:
+    """Calcule le SawReference par defaut : identique au Name.
+    (Anciennement ajoutait ' XX mm' pour les melamine, ce qui creait
+    une incoherence avec le Name dans le nesting.)
+    """
     if not name:
         return ""
-    if "melamine" in name.lower():
-        th = str(thickness).strip() if thickness else ""
-        return f"{name} {th} mm" if th else name
     return name
 
 
@@ -196,66 +199,85 @@ def _grain_direction(name: str) -> str:
 # Lecture XLSM - Page Materials (complete, 49 colonnes)
 # ---------------------------------------------------------------------------
 
+def _resolve_cell(ws, row, col):
+    """Lit une cellule et resout les formules simples (=XX123)."""
+    import re as _re
+    val = ws.cell(row=row, column=col).value
+    if isinstance(val, str) and val.startswith("="):
+        m = _re.match(r"^=([A-Z]{1,3})(\d+)$", val)
+        if m:
+            ref_col_str = m.group(1)
+            ref_row = int(m.group(2))
+            ref_col = 0
+            for ch in ref_col_str:
+                ref_col = ref_col * 26 + (ord(ch) - ord('A') + 1)
+            ref_val = ws.cell(row=ref_row, column=ref_col).value
+            if isinstance(ref_val, str) and ref_val.startswith("="):
+                return val
+            return ref_val
+    return val
+
+
 def read_all_materials_from_xlsm(xlsm_path: str, log_func=print) -> List[MaterialSWOOD]:
     """Lit TOUTES les colonnes de la page Materials (49 colonnes)."""
     log_func(f"Lecture de : {os.path.basename(xlsm_path)} (Materials - complet)")
-    wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=True)
+    wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=False)
     ws = wb["Materials"]
     materials = []
     for row in range(5, ws.max_row + 1):
-        name = ws.cell(row=row, column=1).value
+        name = _resolve_cell(ws, row, 1)
         if not name or str(name).strip() == "":
             continue
         mat = MaterialSWOOD(
             name=str(name).strip(),
-            description=_safe_str(ws.cell(row=row, column=2).value),
-            path=_safe_str(ws.cell(row=row, column=3).value),
-            thickness=_safe_str(ws.cell(row=row, column=4).value),
-            fiber_material=_safe_str(ws.cell(row=row, column=5).value),
-            cost=_safe_str(ws.cell(row=row, column=6).value),
-            density=_safe_str(ws.cell(row=row, column=7).value),
-            color=_safe_str(ws.cell(row=row, column=8).value),
-            transparency=_safe_str(ws.cell(row=row, column=9).value),
-            texture=_safe_str(ws.cell(row=row, column=10).value),
-            texture_direction=_safe_str(ws.cell(row=row, column=11).value),
-            saw_stock=_safe_str(ws.cell(row=row, column=12).value),
-            saw_reference=_safe_str(ws.cell(row=row, column=13).value),
-            saw_fiber=_safe_str(ws.cell(row=row, column=14).value),
-            fiber_speed_factor=_safe_str(ws.cell(row=row, column=15).value),
-            fiber_angle_correction=_safe_str(ws.cell(row=row, column=16).value),
-            material_type=_safe_str(ws.cell(row=row, column=17).value),
-            material_costing_type=_safe_str(ws.cell(row=row, column=18).value),
-            top_color=_safe_str(ws.cell(row=row, column=19).value),
-            top_texture=_safe_str(ws.cell(row=row, column=20).value),
-            top_texture_angle=_safe_str(ws.cell(row=row, column=21).value),
-            top_texture_image_direction=_safe_str(ws.cell(row=row, column=22).value),
-            bottom_color=_safe_str(ws.cell(row=row, column=23).value),
-            bottom_texture=_safe_str(ws.cell(row=row, column=24).value),
-            bottom_texture_angle=_safe_str(ws.cell(row=row, column=25).value),
-            bottom_texture_image_direction=_safe_str(ws.cell(row=row, column=26).value),
-            end_texture=_safe_str(ws.cell(row=row, column=27).value),
-            sw_material=_safe_str(ws.cell(row=row, column=28).value),
-            image=_safe_str(ws.cell(row=row, column=29).value),
-            edge_band_list=_safe_str(ws.cell(row=row, column=30).value),
-            laminate_impact=_safe_str(ws.cell(row=row, column=31).value),
-            allow_thickness_calibration=_safe_str(ws.cell(row=row, column=32).value),
-            min_thickness_calibration=_safe_str(ws.cell(row=row, column=33).value),
-            machining_cost_factor=_safe_str(ws.cell(row=row, column=34).value),
-            sw_texture_height=_safe_str(ws.cell(row=row, column=35).value),
-            top_texture_height=_safe_str(ws.cell(row=row, column=36).value),
-            bottom_texture_height=_safe_str(ws.cell(row=row, column=37).value),
-            material_name_top=_safe_str(ws.cell(row=row, column=38).value),
-            grain_direction_top=_safe_str(ws.cell(row=row, column=39).value),
-            stock_offset_top=_safe_str(ws.cell(row=row, column=40).value),
-            material_name_bottom=_safe_str(ws.cell(row=row, column=41).value),
-            grain_direction_bottom=_safe_str(ws.cell(row=row, column=42).value),
-            stock_offset_bottom=_safe_str(ws.cell(row=row, column=43).value),
-            board_l=_safe_str(ws.cell(row=row, column=44).value),
-            board_w=_safe_str(ws.cell(row=row, column=45).value),
-            ref_fournisseur=_safe_str(ws.cell(row=row, column=46).value),
-            fournisseur=_safe_str(ws.cell(row=row, column=47).value),
-            finish=_safe_str(ws.cell(row=row, column=48).value),
-            glass=_safe_str(ws.cell(row=row, column=49).value),
+            description=_safe_str(_resolve_cell(ws, row, 2)),
+            path=_safe_str(_resolve_cell(ws, row, 3)),
+            thickness=_safe_str(_resolve_cell(ws, row, 4)),
+            fiber_material=_safe_str(_resolve_cell(ws, row, 5)),
+            cost=_safe_str(_resolve_cell(ws, row, 6)),
+            density=_safe_str(_resolve_cell(ws, row, 7)),
+            color=_safe_str(_resolve_cell(ws, row, 8)),
+            transparency=_safe_str(_resolve_cell(ws, row, 9)),
+            texture=_safe_str(_resolve_cell(ws, row, 10)),
+            texture_direction=_safe_str(_resolve_cell(ws, row, 11)),
+            saw_stock=_safe_str(_resolve_cell(ws, row, 12)),
+            saw_reference=_safe_str(_resolve_cell(ws, row, 13)),
+            saw_fiber=_safe_str(_resolve_cell(ws, row, 14)),
+            fiber_speed_factor=_safe_str(_resolve_cell(ws, row, 15)),
+            fiber_angle_correction=_safe_str(_resolve_cell(ws, row, 16)),
+            material_type=_safe_str(_resolve_cell(ws, row, 17)),
+            material_costing_type=_safe_str(_resolve_cell(ws, row, 18)),
+            top_color=_safe_str(_resolve_cell(ws, row, 19)),
+            top_texture=_safe_str(_resolve_cell(ws, row, 20)),
+            top_texture_angle=_safe_str(_resolve_cell(ws, row, 21)),
+            top_texture_image_direction=_safe_str(_resolve_cell(ws, row, 22)),
+            bottom_color=_safe_str(_resolve_cell(ws, row, 23)),
+            bottom_texture=_safe_str(_resolve_cell(ws, row, 24)),
+            bottom_texture_angle=_safe_str(_resolve_cell(ws, row, 25)),
+            bottom_texture_image_direction=_safe_str(_resolve_cell(ws, row, 26)),
+            end_texture=_safe_str(_resolve_cell(ws, row, 27)),
+            sw_material=_safe_str(_resolve_cell(ws, row, 28)),
+            image=_safe_str(_resolve_cell(ws, row, 29)),
+            edge_band_list=_safe_str(_resolve_cell(ws, row, 30)),
+            laminate_impact=_safe_str(_resolve_cell(ws, row, 31)),
+            allow_thickness_calibration=_safe_str(_resolve_cell(ws, row, 32)),
+            min_thickness_calibration=_safe_str(_resolve_cell(ws, row, 33)),
+            machining_cost_factor=_safe_str(_resolve_cell(ws, row, 34)),
+            sw_texture_height=_safe_str(_resolve_cell(ws, row, 35)),
+            top_texture_height=_safe_str(_resolve_cell(ws, row, 36)),
+            bottom_texture_height=_safe_str(_resolve_cell(ws, row, 37)),
+            material_name_top=_safe_str(_resolve_cell(ws, row, 38)),
+            grain_direction_top=_safe_str(_resolve_cell(ws, row, 39)),
+            stock_offset_top=_safe_str(_resolve_cell(ws, row, 40)),
+            material_name_bottom=_safe_str(_resolve_cell(ws, row, 41)),
+            grain_direction_bottom=_safe_str(_resolve_cell(ws, row, 42)),
+            stock_offset_bottom=_safe_str(_resolve_cell(ws, row, 43)),
+            board_l=_safe_str(_resolve_cell(ws, row, 44)),
+            board_w=_safe_str(_resolve_cell(ws, row, 45)),
+            ref_fournisseur=_safe_str(_resolve_cell(ws, row, 46)),
+            fournisseur=_safe_str(_resolve_cell(ws, row, 47)),
+            finish=_safe_str(_resolve_cell(ws, row, 48)),
+            glass=_safe_str(_resolve_cell(ws, row, 49)),
         )
         mat.parametres = compute_parametres(mat.board_l)
         if not mat.saw_reference:
@@ -451,7 +473,7 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
     log_func(f"Generation XML Plaques Nesting...")
 
     # Lire l'entete XML depuis le XLSM (identique a la macro VBA)
-    wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=True)
+    wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=False)
     ws = wb["Materials"]
     xml_line1 = str(ws.cell(row=1, column=1).value or '<?xml version="1.0" encoding="utf-8"?>')
     xml_line2 = str(ws.cell(row=2, column=1).value or "")
@@ -585,7 +607,7 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
     le fait la macro VBA du XLSM.
     """
     log_func(f"Lecture de : {os.path.basename(xlsm_path)} ({sheet_name})")
-    wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=True)
+    wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=False)
     ws = wb[sheet_name]
 
     lastrow = ws.max_row
@@ -616,10 +638,32 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
     txt = xml_line1 + "\r\n" + xml_line2
     txt += "\r\n\t<" + sheet_name + ">"
 
+    # Helper pour resoudre les formules simples de type =COL_LETTRE+LIGNE
+    # (ex: =AT5 -> lire la valeur de la colonne AT ligne 5)
+    import re as _re
+    def _resolve_cell_value(ws, row, col):
+        """Lit une cellule et resout les formules simples (=XX123)."""
+        val = ws.cell(row=row, column=col).value
+        if isinstance(val, str) and val.startswith("="):
+            # Formule simple de type =AT5, =A5, =B12, etc.
+            m = _re.match(r"^=([A-Z]{1,3})(\d+)$", val)
+            if m:
+                ref_col_str = m.group(1)
+                ref_row = int(m.group(2))
+                ref_col = 0
+                for ch in ref_col_str:
+                    ref_col = ref_col * 26 + (ord(ch) - ord('A') + 1)
+                ref_val = ws.cell(row=ref_row, column=ref_col).value
+                # Verifier que la ref n'est pas aussi une formule (eviter boucle)
+                if isinstance(ref_val, str) and ref_val.startswith("="):
+                    return val  # retourner la formule telle quelle
+                return ref_val
+        return val
+
     count = 0
     for i in range(5, lastrow + 1):
         # Verifier que la ligne a un nom (col 1)
-        name_val = ws.cell(row=i, column=1).value
+        name_val = _resolve_cell_value(ws, i, 1)
         if not name_val or str(name_val).strip() == "":
             continue
         count += 1
@@ -627,12 +671,47 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
         # Debut du noeud objet
         obj_txt = "\r\n\t\t<" + obj_alias
         needs_close_tag = False  # True si on a ouvert un sous-noeud (Layers/Properties)
+        in_properties = False  # True si on est dans un bloc <Properties>
+        in_layers = False  # True si on est dans un bloc <Layers>
 
         for j in range(lastcol):
             tag = tags[j]
             header = headers[j]
-            raw_val = ws.cell(row=i, column=j + 1).value
+            raw_val = _resolve_cell_value(ws, i, j + 1)
             cur_val = _format_cell_value(raw_val)
+
+            # Pour les balises de fermeture, on doit toujours les traiter
+            # meme si la valeur est vide
+            if tag == "/Properties":
+                if cur_val != "":
+                    # Si Properties n'a pas ete ouvert (BOARDL vide etc.),
+                    # il faut l'ouvrir maintenant avant d'ecrire la Property
+                    if not in_properties:
+                        if not needs_close_tag:
+                            obj_txt += ">"
+                            needs_close_tag = True
+                        obj_txt += "\r\n\t\t\t<Properties>"
+                        in_properties = True
+                    obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
+                if in_properties:
+                    obj_txt += "\r\n\t\t\t</Properties>"
+                    in_properties = False
+                continue
+
+            if tag == "/Layers":
+                if in_layers:
+                    if cur_val != "":
+                        obj_txt += " " + header + "=\"" + cur_val + "\" />"
+                    obj_txt += "\r\n\t\t\t</Layers>"
+                    in_layers = False
+                continue
+
+            if tag == "/Layer":
+                if in_layers:
+                    if cur_val != "":
+                        obj_txt += " " + header + "=\"" + cur_val + "\""
+                    obj_txt += " />"
+                continue
 
             if cur_val == "":
                 continue
@@ -648,13 +727,18 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                     needs_close_tag = True
                 obj_txt += "\r\n\t\t\t<Properties>"
                 obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
+                in_properties = True
 
             elif tag == "Property":
+                # Si Properties n'a pas ete ouvert (colonne Properties/BOARDL vide),
+                # il faut l'ouvrir maintenant
+                if not in_properties:
+                    if not needs_close_tag:
+                        obj_txt += ">"
+                        needs_close_tag = True
+                    obj_txt += "\r\n\t\t\t<Properties>"
+                    in_properties = True
                 obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
-
-            elif tag == "/Properties":
-                obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
-                obj_txt += "\r\n\t\t\t</Properties>"
 
             elif tag == "Layers":
                 # Ouvrir le noeud objet (>) et commencer un bloc Layers
@@ -663,6 +747,7 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                     needs_close_tag = True
                 obj_txt += "\r\n\t\t\t<Layers>"
                 obj_txt += "\r\n\t\t\t\t<Layer " + header + "=\"" + cur_val + "\""
+                in_layers = True
 
             elif tag == "Layer":
                 # Verifier si le tag precedent etait /Layer -> nouveau Layer
@@ -671,13 +756,6 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                     obj_txt += "\r\n\t\t\t\t<Layer " + header + "=\"" + cur_val + "\""
                 else:
                     obj_txt += " " + header + "=\"" + cur_val + "\""
-
-            elif tag == "/Layer":
-                obj_txt += " " + header + "=\"" + cur_val + "\" />"
-
-            elif tag == "/Layers":
-                obj_txt += " " + header + "=\"" + cur_val + "\" />"
-                obj_txt += "\r\n\t\t\t</Layers"
 
         # Fermeture du noeud objet
         if needs_close_tag:
@@ -702,7 +780,7 @@ def export_xml_materials(xlsm_path: str, output_dir: str = None, log_func=print)
     (Materials + EdgeBands) et en utilisant les tags row 3 / headers row 4
     pour construire la structure XML identique.
     """
-    wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=True)
+    wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=False)
     ws = wb["Materials"]
     xml_line1 = str(ws.cell(row=1, column=1).value or "<?xml version=\"1.0\" encoding=\"utf-8\"?>")
     xml_line2 = str(ws.cell(row=2, column=1).value or "")
@@ -817,7 +895,7 @@ class App:
 
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Export Optiplanning & SWOOD - Destribois")
+        self.root.title(f"Export Optiplanning & SWOOD v{APP_VERSION} - Destribois")
         self.root.geometry("720x660")
         self.root.resizable(True, True)
         self.root.configure(bg=self.BG)
@@ -851,7 +929,7 @@ class App:
             except Exception:
                 continue
 
-        tk.Label(header_content, text="Export Optiplanning & SWOOD",
+        tk.Label(header_content, text=f"Export Optiplanning & SWOOD v{APP_VERSION}",
                  font=self.FONT_HEADING,
                  fg=self.WHITE, bg=self.PRIMARY).pack(side="left", pady=10)
 
