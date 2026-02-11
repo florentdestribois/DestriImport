@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Executable (trop volumineux pour git)
+*.exe
+
+# PDF genere
+*.pdf
+
+# Fichiers temporaires
+*.tmp
+nul
+
+# Fichiers Excel de sauvegarde
+~$*.xlsm
+*.xlsm.bak
+
+# IDE
+.vscode/
+.idea/
+
+# Test
+Test export/
