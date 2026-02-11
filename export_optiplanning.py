@@ -684,14 +684,6 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
             # meme si la valeur est vide
             if tag == "/Properties":
                 if cur_val != "":
-                    # Si Properties n'a pas ete ouvert (BOARDL vide etc.),
-                    # il faut l'ouvrir maintenant avant d'ecrire la Property
-                    if not in_properties:
-                        if not needs_close_tag:
-                            obj_txt += ">"
-                            needs_close_tag = True
-                        obj_txt += "\r\n\t\t\t<Properties>"
-                        in_properties = True
                     obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
                 if in_properties:
                     obj_txt += "\r\n\t\t\t</Properties>"
