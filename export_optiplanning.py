@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Optional, List
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
+from xml.sax.saxutils import escape as _xml_escape
 from PIL import Image, ImageTk
 
 # On embarque tout le code directement (pas d'import externe sauf openpyxl)
@@ -30,6 +31,11 @@ except ImportError:
     else:
         print("ERREUR: pip install openpyxl")
     sys.exit(1)
+
+
+def _xesc(val: str) -> str:
+    """Echappe les caracteres speciaux XML pour les valeurs d'attributs."""
+    return _xml_escape(val, {'"': '&quot;', "'": '&apos;'})
 
 
 # ---------------------------------------------------------------------------
@@ -520,9 +526,9 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
 
         # Construction du <Board ... /> en texte brut (self-closing)
         txt += "\r\n\t\t<Board"
-        txt += f' Name="{mat.name}"'
-        txt += f' Description="{mat.description}"'
-        txt += f' Path="{mat.path}"'
+        txt += f' Name="{_xesc(mat.name)}"'
+        txt += f' Description="{_xesc(mat.description)}"'
+        txt += f' Path="{_xesc(mat.path)}"'
         txt += f' BoardType="Panel"'
         txt += f' Length="{length_val:g}"'
         txt += f' Width="{width_val:g}"'
@@ -531,9 +537,9 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
         txt += f' Quantity="10"'
         txt += f' Cost="{cost_plaque:.2f}"'
         txt += f' MaterialID="0"'
-        txt += f' Reference="{mat.ref_fournisseur}"'
-        txt += f' Supplier="{mat.fournisseur}"'
-        txt += f' SupplierReference="{mat.ref_fournisseur}"'
+        txt += f' Reference="{_xesc(mat.ref_fournisseur)}"'
+        txt += f' Supplier="{_xesc(mat.fournisseur)}"'
+        txt += f' SupplierReference="{_xesc(mat.ref_fournisseur)}"'
         txt += f' NestingCorner="Lower_Left"'
         txt += f' NestingDirection="X"'
         txt += f' NestingUniformCollar="0"'
@@ -546,7 +552,7 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
         txt += f' LibraryUUID="{uuid.uuid4()}"'
         txt += f' ID="{idx}"'
         txt += f' ForBoardEstimation="true"'
-        txt += f' Materials="{materials_val}"'
+        txt += f' Materials="{_xesc(materials_val)}"'
         txt += " />"
 
     txt += "\r\n\t</Boards>"
@@ -700,7 +706,7 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                             needs_close_tag = True
                         obj_txt += "\r\n\t\t\t<Properties>"
                         in_properties = True
-                    obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
+                    obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + _xesc(cur_val) + "\" />"
                 if in_properties:
                     obj_txt += "\r\n\t\t\t</Properties>"
                     in_properties = False
@@ -709,7 +715,7 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
             if tag == "/Layers":
                 if in_layers:
                     if cur_val != "":
-                        obj_txt += " " + header + "=\"" + cur_val + "\" />"
+                        obj_txt += " " + header + "=\"" + _xesc(cur_val) + "\" />"
                     obj_txt += "\r\n\t\t\t</Layers>"
                     in_layers = False
                 continue
@@ -717,7 +723,7 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
             if tag == "/Layer":
                 if in_layers:
                     if cur_val != "":
-                        obj_txt += " " + header + "=\"" + cur_val + "\""
+                        obj_txt += " " + header + "=\"" + _xesc(cur_val) + "\""
                     obj_txt += " />"
                 continue
 
@@ -729,7 +735,7 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
 
             if tag == "":
                 # Attribut simple
-                obj_txt += " " + header + "=\"" + cur_val + "\""
+                obj_txt += " " + header + "=\"" + _xesc(cur_val) + "\""
 
             elif tag == "Properties":
                 # Ouvrir le noeud objet (>) et commencer un bloc Properties
@@ -737,7 +743,7 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                     obj_txt += ">"
                     needs_close_tag = True
                 obj_txt += "\r\n\t\t\t<Properties>"
-                obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
+                obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + _xesc(cur_val) + "\" />"
                 in_properties = True
 
             elif tag == "Property":
@@ -749,7 +755,7 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                         needs_close_tag = True
                     obj_txt += "\r\n\t\t\t<Properties>"
                     in_properties = True
-                obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + cur_val + "\" />"
+                obj_txt += "\r\n\t\t\t\t<Property Name=\"" + header + "\" Value=\"" + _xesc(cur_val) + "\" />"
 
             elif tag == "Layers":
                 # Ouvrir le noeud objet (>) et commencer un bloc Layers
@@ -757,16 +763,16 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                     obj_txt += ">"
                     needs_close_tag = True
                 obj_txt += "\r\n\t\t\t<Layers>"
-                obj_txt += "\r\n\t\t\t\t<Layer " + header + "=\"" + cur_val + "\""
+                obj_txt += "\r\n\t\t\t\t<Layer " + header + "=\"" + _xesc(cur_val) + "\""
                 in_layers = True
 
             elif tag == "Layer":
                 # Verifier si le tag precedent etait /Layer -> nouveau Layer
                 prev_tag = tags[j - 1] if j > 0 else ""
                 if prev_tag == "/Layer":
-                    obj_txt += "\r\n\t\t\t\t<Layer " + header + "=\"" + cur_val + "\""
+                    obj_txt += "\r\n\t\t\t\t<Layer " + header + "=\"" + _xesc(cur_val) + "\""
                 else:
-                    obj_txt += " " + header + "=\"" + cur_val + "\""
+                    obj_txt += " " + header + "=\"" + _xesc(cur_val) + "\""
 
         # Fermeture du noeud objet
         if needs_close_tag:
