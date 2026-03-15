@@ -11,6 +11,7 @@ Genere les fichiers d'export depuis Outil_Material_Import.xlsm :
 import os
 import sys
 import uuid
+import math
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
@@ -35,7 +36,7 @@ except ImportError:
 # Constantes XML SWOOD
 # ---------------------------------------------------------------------------
 
-APP_VERSION = "1.1"
+APP_VERSION = "1.2"
 
 SWOOD_XMLNS = "http://www.eficad.com//SWOODMat"
 SWOOD_XSD = "http://www.w3.org/2001/XMLSchema"
@@ -679,6 +680,13 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
             header = headers[j]
             raw_val = _resolve_cell_value(ws, i, j + 1)
             cur_val = _format_cell_value(raw_val)
+
+            # SWOOD attend FiberAngleCorrection en radians, le XLSM stocke des degres
+            if header == "FiberAngleCorrection" and cur_val != "":
+                try:
+                    cur_val = str(math.radians(float(cur_val)))
+                except ValueError:
+                    pass
 
             # Pour les balises de fermeture, on doit toujours les traiter
             # meme si la valeur est vide
