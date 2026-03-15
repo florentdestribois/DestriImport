@@ -724,6 +724,9 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
             if cur_val == "":
                 continue
 
+            if header == "":
+                continue
+
             if tag == "":
                 # Attribut simple
                 obj_txt += " " + header + "=\"" + cur_val + "\""
