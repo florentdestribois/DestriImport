@@ -38,6 +38,34 @@ def _xesc(val: str) -> str:
     return _xml_escape(val, {'"': '&quot;', "'": '&apos;'})
 
 
+def _write_unique_export(output_dir: str, prefix: str, extension: str,
+                         content: str) -> tuple:
+    """Reserve puis ecrit un export sans collision inter-processus."""
+    os.makedirs(output_dir, exist_ok=True)
+    for _attempt in range(20):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"{prefix}_{timestamp}_{uuid.uuid4().hex[:8]}{extension}"
+        output_path = os.path.join(output_dir, filename)
+        try:
+            fd = os.open(
+                output_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except Exception:
+            try:
+                os.remove(output_path)
+            except OSError:
+                pass
+            raise
+        return filename, output_path
+    raise FileExistsError("Impossible de reserver un nom d'export unique")
+
+
 # ---------------------------------------------------------------------------
 # Constantes XML SWOOD
 # ---------------------------------------------------------------------------
@@ -439,12 +467,9 @@ def export_optiplanning_txt(xlsm_path: str, output_dir: str = None, log_func=pri
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(xlsm_path))
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"Materiaux_a_importer_Optiplanning_{timestamp}.txt"
-    output_path = os.path.join(output_dir, filename)
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+    filename, output_path = _write_unique_export(
+        output_dir, "Materiaux_a_importer_Optiplanning", ".txt",
+        "\n".join(lines))
 
     count_5m = sum(1 for m in materials if m.parametres == "Destribois 5m")
     count_default_cost = sum(1 for m in materials if m.cost == "1.50")
@@ -562,12 +587,8 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(xlsm_path))
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"Plaques_Nesting_{timestamp}.xml"
-    output_path = os.path.join(output_dir, filename)
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(txt)
+    filename, output_path = _write_unique_export(
+        output_dir, "Plaques_Nesting", ".xml", txt)
 
     log_func(f"Fichier cree : {filename}")
     log_func(f"  {count} plaques exportees")
@@ -826,12 +847,8 @@ def export_xml_materials(xlsm_path: str, output_dir: str = None, log_func=print)
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(xlsm_path))
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"Import_Swood_Materiaux_{timestamp}.xml"
-    output_path = os.path.join(output_dir, filename)
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(full_xml)
+    filename, output_path = _write_unique_export(
+        output_dir, "Import_Swood_Materiaux", ".xml", full_xml)
 
     log_func(f"Fichier cree : {filename}")
     log_func(f"  Total : {mat_count} materiaux + {eb_count} chants")
@@ -867,12 +884,8 @@ def export_xml_edgebands(xlsm_path: str, output_dir: str = None, log_func=print)
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(xlsm_path))
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"Import_Swood_Chants_{timestamp}.xml"
-    output_path = os.path.join(output_dir, filename)
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(full_xml)
+    filename, output_path = _write_unique_export(
+        output_dir, "Import_Swood_Chants", ".xml", full_xml)
 
     log_func(f"Fichier cree : {filename}")
 
