@@ -12,25 +12,33 @@ import os
 import sys
 import uuid
 import math
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Optional, List
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from xml.sax.saxutils import escape as _xml_escape
-from PIL import Image, ImageTk
 
 # On embarque tout le code directement (pas d'import externe sauf openpyxl)
 try:
     import openpyxl
-except ImportError:
-    if getattr(sys, 'frozen', False):
-        messagebox.showerror("Erreur", "Module openpyxl manquant.\nInstaller : pip install openpyxl")
-    else:
-        print("ERREUR: pip install openpyxl")
-    sys.exit(1)
+except ImportError as exc:
+    raise ImportError(
+        "Module openpyxl manquant. Installer : pip install openpyxl"
+    ) from exc
+
+
+def _load_gui_dependencies():
+    """Charge Tkinter/Pillow uniquement pour le lanceur graphique autonome.
+
+    DestriCenter importe seulement les fonctions d export dans sa SPA
+    WebView2. Ce chargement paresseux garde ces fonctions utilisables dans un
+    bundle qui exclut volontairement Tkinter.
+    """
+    global tk, filedialog, ttk, Image, ImageTk
+    import tkinter as tk
+    from tkinter import filedialog, ttk
+    from PIL import Image, ImageTk
 
 
 def _xesc(val: str) -> str:
@@ -924,6 +932,7 @@ class App:
     FONT_MONO = ('Consolas', 10)
 
     def __init__(self):
+        _load_gui_dependencies()
         self.root = tk.Tk()
         self.root.title(f"Export Optiplanning & SWOOD v{APP_VERSION} - Destribois")
         self.root.geometry("720x660")
