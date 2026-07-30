@@ -214,12 +214,10 @@ export_optiplanning.py
 |
 |-- Dataclasses
 |   |-- MaterialSWOOD      (49 champs - page Materials)
-|   |-- EdgeBandSWOOD       (23 champs - page EdgeBands)
 |
 |-- Lecture XLSM
 |   |-- read_all_materials_from_xlsm()   (49 colonnes)
 |   |-- read_materials_from_xlsm()       (colonnes essentielles - TXT)
-|   |-- read_edgebands_from_xlsm()       (23 colonnes)
 |
 |-- Exports
 |   |-- export_optiplanning_txt()        (Export 1 - TXT)

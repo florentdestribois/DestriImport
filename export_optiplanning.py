@@ -16,7 +16,6 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Optional, List
 import xml.etree.ElementTree as ET
-from xml.dom import minidom
 from xml.sax.saxutils import escape as _xml_escape
 
 # On embarque tout le code directement (pas d'import externe sauf openpyxl)
@@ -80,11 +79,6 @@ def _write_unique_export(output_dir: str, prefix: str, extension: str,
 
 APP_VERSION = "1.2"
 
-SWOOD_XMLNS = "http://www.eficad.com//SWOODMat"
-SWOOD_XSD = "http://www.w3.org/2001/XMLSchema"
-SWOOD_XSI = "http://www.w3.org/2001/XMLSchema-instance"
-SWOOD_VERSION = "2"
-
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -144,34 +138,6 @@ class MaterialSWOOD:
     glass: str = ""
     # Champs calcules
     parametres: str = ""
-
-
-@dataclass
-class EdgeBandSWOOD:
-    """Un chant SWOOD lu depuis le XLSM (page EdgeBands)."""
-    name: str = ""
-    id_val: str = ""
-    description: str = ""
-    path: str = ""
-    cost: str = ""
-    reference: str = ""
-    thickness: str = ""
-    color: str = ""
-    image_path: str = ""
-    creation_corps: str = ""
-    stock_offset: str = ""
-    width_min: str = ""
-    width_max: str = ""
-    width: str = ""
-    force_stock_exclusion: str = ""
-    shape_id: str = ""
-    end_shape_id: str = ""
-    use_mitre_cut: str = ""
-    texture_height: str = ""
-    eb_additional_shape_id: str = ""
-    ebw_finish: str = ""
-    finish: str = ""
-    eb_supplier: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -259,26 +225,6 @@ def _safe_str(value) -> str:
         except (ValueError, OverflowError):
             pass
     return s
-
-
-def _bool_str(value) -> str:
-    """Convertit une valeur en 'true'/'false' pour XML SWOOD."""
-    if value is None:
-        return "false"
-    s = str(value).strip().lower()
-    if s in ("1", "true", "yes", "oui"):
-        return "true"
-    return "false"
-
-
-def _grain_direction(name: str) -> str:
-    """Determine la direction du grain a partir du nom du materiau."""
-    n = name.lower()
-    if any(x in n for x in ("h1", "h3", "f1", "f2", "f3", "f4")):
-        # Les decors bois/textures ont generalement un sens horizontal
-        if "melamine-h" in n or "melamine-f" in n:
-            return "Horizontal"
-    return "None"
 
 
 # ---------------------------------------------------------------------------
@@ -403,89 +349,6 @@ def read_materials_from_xlsm(xlsm_path: str, log_func=print) -> list:
     wb.close()
     log_func(f"{len(materials)} materiaux lus")
     return materials
-
-
-# ---------------------------------------------------------------------------
-# Lecture XLSM - Page EdgeBands
-# ---------------------------------------------------------------------------
-
-def read_edgebands_from_xlsm(xlsm_path: str, log_func=print) -> List[EdgeBandSWOOD]:
-    """Lit la page EdgeBands du XLSM (23 colonnes)."""
-    log_func(f"Lecture de : {os.path.basename(xlsm_path)} (EdgeBands)")
-    wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=True)
-
-    if "EdgeBands" not in wb.sheetnames:
-        log_func("ERREUR : Page 'EdgeBands' introuvable dans le XLSM.")
-        wb.close()
-        return []
-
-    ws = wb["EdgeBands"]
-    edgebands = []
-    for row in range(5, ws.max_row + 1):
-        name = ws.cell(row=row, column=1).value
-        if not name or str(name).strip() == "":
-            continue
-        eb = EdgeBandSWOOD(
-            name=str(name).strip(),
-            id_val=_safe_str(ws.cell(row=row, column=2).value),
-            description=_safe_str(ws.cell(row=row, column=3).value),
-            path=_safe_str(ws.cell(row=row, column=4).value),
-            cost=_safe_str(ws.cell(row=row, column=5).value),
-            reference=_safe_str(ws.cell(row=row, column=6).value),
-            thickness=_safe_str(ws.cell(row=row, column=7).value),
-            color=_safe_str(ws.cell(row=row, column=8).value),
-            image_path=_safe_str(ws.cell(row=row, column=9).value),
-            creation_corps=_safe_str(ws.cell(row=row, column=10).value),
-            stock_offset=_safe_str(ws.cell(row=row, column=11).value),
-            width_min=_safe_str(ws.cell(row=row, column=12).value),
-            width_max=_safe_str(ws.cell(row=row, column=13).value),
-            width=_safe_str(ws.cell(row=row, column=14).value),
-            force_stock_exclusion=_safe_str(ws.cell(row=row, column=15).value),
-            shape_id=_safe_str(ws.cell(row=row, column=16).value),
-            end_shape_id=_safe_str(ws.cell(row=row, column=17).value),
-            use_mitre_cut=_safe_str(ws.cell(row=row, column=18).value),
-            texture_height=_safe_str(ws.cell(row=row, column=19).value),
-            eb_additional_shape_id=_safe_str(ws.cell(row=row, column=20).value),
-            ebw_finish=_safe_str(ws.cell(row=row, column=21).value),
-            finish=_safe_str(ws.cell(row=row, column=22).value),
-            eb_supplier=_safe_str(ws.cell(row=row, column=23).value),
-        )
-        edgebands.append(eb)
-    wb.close()
-    log_func(f"{len(edgebands)} chants lus")
-    return edgebands
-
-
-# ---------------------------------------------------------------------------
-# Utilitaire XML
-# ---------------------------------------------------------------------------
-
-def _pretty_xml(root_element: ET.Element) -> str:
-    """Genere un XML proprement indente avec declaration UTF-8."""
-    rough = ET.tostring(root_element, encoding="unicode")
-    parsed = minidom.parseString(rough)
-    pretty = parsed.toprettyxml(indent="  ", encoding=None)
-    # Supprimer la ligne <?xml ?> generee par minidom (on la met nous-meme)
-    lines = pretty.split("\n")
-    # minidom ajoute <?xml version="1.0" ?> qu'on remplace par notre version
-    if lines and lines[0].startswith("<?xml"):
-        lines[0] = '<?xml version="1.0" encoding="utf-8"?>'
-    # Nettoyer les lignes vides en trop
-    cleaned = []
-    for line in lines:
-        if line.strip():
-            cleaned.append(line)
-    return "\n".join(cleaned)
-
-
-def _create_swood_root() -> ET.Element:
-    """Cree l'element racine <SWOODMat> avec les bons namespaces."""
-    root = ET.Element("SWOODMat")
-    root.set("xmlns:xsd", SWOOD_XSD)
-    root.set("xmlns:xsi", SWOOD_XSI)
-    root.set("Version", SWOOD_VERSION)
-    root.set("xmlns", SWOOD_XMLNS)
-    return root
 
 
 # ---------------------------------------------------------------------------
