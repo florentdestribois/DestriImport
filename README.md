@@ -54,6 +54,11 @@ Developpe pour **Destribois** - Agencement & Menuiserie.
 **Particularites :**
 - Les dimensions (Length, Width, Thickness) sont converties de **mm en metres** (division par 1000) car SWOOD Nesting multiplie par 1000 a l'import.
 - Le **cout par plaque** est calcule automatiquement : `surface_m2 x cout_euro_m2`.
+- Une plaque dont une dimension est absente, non finie ou non positive est
+  ignoree et signalee dans le journal. Aucun format standard n'est invente.
+- Si le cout source est absent ou invalide, l'attribut `Cost` est omis. Le
+  XLSM ne fournissant aucune quantite de stock, l'export n'ajoute pas
+  d'attribut `Quantity`.
 - L'attribut **Path** est renseigne depuis la colonne correspondante du XLSM.
 - L'attribut **SupplierReference** est renseigne depuis la Reference Fournisseur.
 - Le format XML est genere en texte brut avec indentation par tabulations, identique au format de la macro VBA pour une compatibilite maximale avec l'import SWOOD.
