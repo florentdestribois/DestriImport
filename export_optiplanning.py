@@ -188,20 +188,56 @@ def compute_saw_reference(name: str, thickness) -> str:
     return name
 
 
-def compute_parametres(board_l) -> str:
+def _parse_finite_float(value):
+    """Convertit value en float fini, ou None si absent/illisible/infini.
+
+    Centralise la regle : une valeur source vide, non numerique ou non
+    finie (NaN/Infini) ne doit jamais etre traitee comme un nombre exploitable.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if s == "":
+        return None
     try:
-        return "Destribois 5m" if float(board_l) > 3200 else "Destribois"
+        num = float(s)
     except (TypeError, ValueError):
-        return "Destribois"
+        return None
+    if not math.isfinite(num):
+        return None
+    return num
+
+
+def compute_parametres(board_l) -> str:
+    # Sans longueur de plaque finie et positive, aucun gabarit Destribois
+    # ne peut etre deduit : retourner '' plutot qu'une valeur inventee.
+    num = _parse_finite_float(board_l)
+    if num is None or num <= 0:
+        return ""
+    return "Destribois 5m" if num > 3200 else "Destribois"
 
 
 def format_cost(cost) -> str:
-    if cost is None or str(cost).strip() == "":
-        return "1.50"
-    try:
-        return f"{float(cost):.2f}"
-    except (TypeError, ValueError):
-        return "1.50"
+    # Un cout absent, non numerique, non fini ou negatif est un cout
+    # inconnu : retourner '' plutot que d'inventer un tarif par defaut.
+    num = _parse_finite_float(cost)
+    if num is None or num < 0:
+        return ""
+    return f"{num:.2f}"
+
+
+def format_positive_number(value) -> str:
+    """Convertit une cote en millimetres vers des metres (sans zeros
+    inutiles), pour les attributs XML SWOOD (Length/Width/Thickness).
+
+    Une cote absente, non numerique, non finie ou non strictement positive
+    n'a pas de sens physique : retourner '' plutot qu'une dimension inventee.
+    """
+    num = _parse_finite_float(value)
+    if num is None or num <= 0:
+        return ""
+    meters = num / 1000.0
+    return f"{meters:g}"
 
 
 def _safe_str(value) -> str:
@@ -480,13 +516,14 @@ def export_optiplanning_txt(xlsm_path: str, output_dir: str = None, log_func=pri
         "\n".join(lines))
 
     count_5m = sum(1 for m in materials if m.parametres == "Destribois 5m")
-    count_default_cost = sum(1 for m in materials if m.cost == "1.50")
+    count_missing_cost = sum(1 for m in materials if not m.cost)
     count_no_ref = sum(1 for m in materials if not m.ref_fournisseur)
 
     log_func(f"Fichier cree : {filename}")
     log_func(f"  {len(lines)} lignes")
     log_func(f"  {count_5m} lignes 'Destribois 5m'")
-    log_func(f"  {count_default_cost} lignes cout par defaut (1.50)")
+    if count_missing_cost:
+        log_func(f"  {count_missing_cost} lignes sans cout (valeur absente)")
     if count_no_ref:
         log_func(f"  {count_no_ref} lignes sans ref fournisseur")
 
@@ -524,35 +561,27 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
     txt += "\r\n\t<Boards>"
 
     count = 0
-    for idx, mat in enumerate(materials, start=1):
-        count += 1
+    ignored = 0
+    grain_count = 0
+    idx = 0
+    for mat in materials:
+        # Cotes obligatoires (mm -> m). Une plaque sans longueur, largeur
+        # ou epaisseur finie et positive n'est pas nestable : elle est
+        # ignoree plutot que completee par une dimension inventee.
+        length_val = format_positive_number(mat.board_l)
+        width_val = format_positive_number(mat.board_w)
+        thick_val = format_positive_number(mat.thickness)
+        if not (length_val and width_val and thick_val):
+            ignored += 1
+            continue
 
-        # Dimensions XLSM en mm -> conversion en metres pour SWOOD (SWOOD x1000 a l'import)
-        try:
-            length_mm = float(mat.board_l) if mat.board_l else 2800.0
-        except (ValueError, TypeError):
-            length_mm = 2800.0
-        try:
-            width_mm = float(mat.board_w) if mat.board_w else 2070.0
-        except (ValueError, TypeError):
-            width_mm = 2070.0
-        try:
-            thick_mm = float(mat.thickness) if mat.thickness else 19.0
-        except (ValueError, TypeError):
-            thick_mm = 19.0
-        length_val = length_mm / 1000.0
-        width_val = width_mm / 1000.0
-        thick_val = thick_mm / 1000.0
+        idx += 1
+        count += 1
 
         # GrainDirection
         grain = "Horizontal" if mat.fiber_material == "1" else "None"
-
-        # Cost = surface m2 x prix/m2
-        try:
-            cost_m2 = float(mat.cost) if mat.cost else 0.0
-        except (ValueError, TypeError):
-            cost_m2 = 0.0
-        cost_plaque = length_val * width_val * cost_m2
+        if grain == "Horizontal":
+            grain_count += 1
 
         # Materials = SawReference ou Name
         materials_val = mat.saw_reference if mat.saw_reference else mat.name
@@ -563,12 +592,16 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
         txt += f' Description="{_xesc(mat.description)}"'
         txt += f' Path="{_xesc(mat.path)}"'
         txt += f' BoardType="Panel"'
-        txt += f' Length="{length_val:g}"'
-        txt += f' Width="{width_val:g}"'
-        txt += f' Thickness="{thick_val:g}"'
+        txt += f' Length="{length_val}"'
+        txt += f' Width="{width_val}"'
+        txt += f' Thickness="{thick_val}"'
         txt += f' GrainDirection="{grain}"'
-        txt += f' Quantity="10"'
-        txt += f' Cost="{cost_plaque:.2f}"'
+        # Cost = surface m2 x prix/m2, omis (pas invente) si le prix
+        # source est absent, non numerique, non fini ou negatif.
+        cost_m2_str = format_cost(mat.cost)
+        if cost_m2_str:
+            cost_plaque = float(length_val) * float(width_val) * float(cost_m2_str)
+            txt += f' Cost="{cost_plaque:.2f}"'
         txt += f' MaterialID="0"'
         txt += f' Reference="{_xesc(mat.ref_fournisseur)}"'
         txt += f' Supplier="{_xesc(mat.fournisseur)}"'
@@ -600,8 +633,8 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
 
     log_func(f"Fichier cree : {filename}")
     log_func(f"  {count} plaques exportees")
-    count_grain = sum(1 for m in materials if m.fiber_material == "1")
-    log_func(f"  {count_grain} plaques avec grain horizontal")
+    log_func(f"  {grain_count} plaques avec grain horizontal")
+    log_func(f"  {ignored} plaques ignorees (cotes absentes ou non finies)")
 
     return output_path
 
