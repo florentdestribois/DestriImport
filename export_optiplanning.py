@@ -12,6 +12,7 @@ import os
 import sys
 import uuid
 import math
+import re
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -478,6 +479,14 @@ def _create_swood_root() -> ET.Element:
     return root
 
 
+def _validate_xml_document(content: str) -> None:
+    """Refuse d'ecrire un export incomplet ou XML mal forme."""
+    try:
+        ET.fromstring(content)
+    except ET.ParseError as exc:
+        raise ValueError("Export XML SWOOD mal forme : %s" % exc) from exc
+
+
 # ---------------------------------------------------------------------------
 # EXPORT 1 : TXT Optiplanning (existant)
 # ---------------------------------------------------------------------------
@@ -653,6 +662,193 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
 #   "/Layers"    -> ferme le <Layer> puis </Layers>
 # ---------------------------------------------------------------------------
 
+_EDGEBAND_VARIANT_PATHS = ("1x23", "2x23", "1x43", "2x43")
+_EDGEBAND_WIDTH_HEADERS = ("WidthMin", "WidthMax", "Width")
+
+
+def _edgeband_variant_base(name: str, path: str) -> Optional[str]:
+    prefix = path + " - "
+    value = _format_cell_value(name)
+    if not value.startswith(prefix):
+        return None
+    base = value[len(prefix):].strip()
+    return base or None
+
+
+def _edgeband_archive_base(name: str, thickness) -> Optional[tuple]:
+    """Retourne le decor et son epaisseur depuis un nom d'archive.
+
+    Les quatre listes actives sont des projections des lignes ``Archives``.
+    Le suffixe du nom est controle avec la colonne Thickness afin de ne pas
+    fabriquer une variante depuis une ligne ambigue ou mal etiquetee.
+    """
+    value = _format_cell_value(name)
+    match = re.match(r"^(.+?)\s+-\s+([12])(?:\.0+)?\s*mm\s*$", value,
+                     flags=re.IGNORECASE)
+    if not match:
+        return None
+    declared = _format_cell_value(thickness)
+    if declared.endswith(".0"):
+        declared = declared[:-2]
+    archive_thickness = match.group(2)
+    if declared != archive_thickness:
+        return None
+    return match.group(1).strip(), archive_thickness
+
+
+def _normalise_edgeband_rows(rows: list, headers: list) -> list:
+    """Reconstruit les variantes actives et reserve les ID des Archives.
+
+    Le classeur contient une ligne canonique par decor/epaisseur sous
+    ``Path=Archives`` et quatre listes actives derivees (1x23, 2x23, 1x43,
+    2x43). Repartir de ces lignes canoniques evite les decalages de blocs et
+    recree une variante manquante. Les lignes Archives restent byte-for-byte
+    equivalentes du point de vue de leurs valeurs ; seules les lignes actives
+    derivees recoivent de nouveaux ID.
+    """
+    indexes = {header: index for index, header in enumerate(headers) if header}
+    required = {"Name", "ID", "Path", "Reference", "Thickness"}
+    if not required <= set(indexes):
+        return rows
+
+    name_index = indexes["Name"]
+    id_index = indexes["ID"]
+    path_index = indexes["Path"]
+    reference_index = indexes["Reference"]
+    thickness_index = indexes["Thickness"]
+    width_indexes = [indexes[name] for name in _EDGEBAND_WIDTH_HEADERS
+                     if name in indexes]
+
+    archives = []
+    active_rows = []
+    archive_sources = {"1": {}, "2": {}}
+    archive_order = {"1": [], "2": []}
+    for row in rows:
+        path = _format_cell_value(row[path_index])
+        if path != "Archives":
+            active_rows.append(row)
+            continue
+        archives.append(row)
+        parsed = _edgeband_archive_base(
+            row[name_index], row[thickness_index])
+        if not parsed:
+            continue
+        base, thickness = parsed
+        if base not in archive_sources[thickness]:
+            archive_sources[thickness][base] = row
+            archive_order[thickness].append(base)
+
+    existing_variants = {}
+    active_order_by_path = {path: [] for path in _EDGEBAND_VARIANT_PATHS}
+    managed_rows = set()
+    for row in active_rows:
+        path = _format_cell_value(row[path_index])
+        if path not in _EDGEBAND_VARIANT_PATHS:
+            continue
+        base = _edgeband_variant_base(row[name_index], path)
+        thickness = path.split("x", 1)[0]
+        if not base or base not in archive_sources[thickness]:
+            continue
+        key = (path, base)
+        managed_rows.add(id(row))
+        if key not in existing_variants:
+            existing_variants[key] = row
+            active_order_by_path[path].append(base)
+
+    order_by_thickness = {}
+    for thickness in ("1", "2"):
+        order = []
+        seen = set()
+        same_thickness_paths = [
+            path for path in _EDGEBAND_VARIANT_PATHS
+            if path.startswith(thickness + "x")]
+        fallback_paths = [
+            path for path in _EDGEBAND_VARIANT_PATHS
+            if path not in same_thickness_paths]
+        for path in same_thickness_paths + fallback_paths:
+            for base in active_order_by_path[path]:
+                if (base in archive_sources[thickness]
+                        and base not in seen):
+                    seen.add(base)
+                    order.append(base)
+        for base in archive_order[thickness]:
+            if base not in seen:
+                seen.add(base)
+                order.append(base)
+        order_by_thickness[thickness] = order
+
+    variants_by_path = {}
+    for path in _EDGEBAND_VARIANT_PATHS:
+        thickness = path.split("x", 1)[0]
+        variants = []
+        for base in order_by_thickness[thickness]:
+            source = list(archive_sources[thickness][base])
+            current = existing_variants.get((path, base))
+            if current is not None:
+                for index in width_indexes:
+                    source[index] = current[index]
+            variant_name = path + " - " + base
+            source[name_index] = variant_name
+            source[id_index] = None
+            source[path_index] = path
+            source[reference_index] = variant_name
+            variants.append(source)
+        variants_by_path[path] = variants
+
+    normalised = []
+    emitted_paths = set()
+    for row in active_rows:
+        path = _format_cell_value(row[path_index])
+        if id(row) in managed_rows:
+            if path not in emitted_paths:
+                normalised.extend((variant, "generated")
+                                  for variant in variants_by_path[path])
+                emitted_paths.add(path)
+            continue
+        normalised.append((list(row), "active"))
+    for path in _EDGEBAND_VARIANT_PATHS:
+        if path not in emitted_paths and variants_by_path[path]:
+            normalised.extend((variant, "generated")
+                              for variant in variants_by_path[path])
+    normalised.extend((list(row), "archive") for row in archives)
+
+    archive_ids = []
+    for row, kind in normalised:
+        if kind == "archive":
+            identifier = _format_cell_value(row[id_index])
+            if not identifier or identifier in archive_ids:
+                raise ValueError(
+                    "Les ID des chants Archives doivent etre renseignes et uniques")
+            archive_ids.append(identifier)
+
+    used_ids = set(archive_ids)
+    needs_id = []
+    active_names = set()
+    for row, kind in normalised:
+        if kind == "archive":
+            continue
+        name = _format_cell_value(row[name_index])
+        if name in active_names:
+            raise ValueError("Nom de chant actif duplique : " + name)
+        active_names.add(name)
+        identifier = _format_cell_value(row[id_index])
+        if kind == "generated" or not identifier or identifier in used_ids:
+            needs_id.append(row)
+            row[id_index] = None
+        else:
+            used_ids.add(identifier)
+
+    numeric_ids = [int(value) for value in used_ids if value.isdigit()]
+    next_id = max(numeric_ids, default=0) + 1
+    for row in needs_id:
+        while str(next_id) in used_ids:
+            next_id += 1
+        row[id_index] = next_id
+        used_ids.add(str(next_id))
+        next_id += 1
+
+    return [row for row, _kind in normalised]
+
 def _format_cell_value(val) -> str:
     """Formate une valeur de cellule comme la macro VBA :
     - Remplace les virgules par des points
@@ -729,13 +925,28 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
                 return ref_val
         return val
 
-    count = 0
+    source_rows = []
     for i in range(5, lastrow + 1):
         # Verifier que la ligne a un nom (col 1)
         name_val = _resolve_cell_value(ws, i, 1)
         if not name_val or str(name_val).strip() == "":
             continue
-        count += 1
+        source_rows.append([
+            _resolve_cell_value(ws, i, column)
+            for column in range(1, lastcol + 1)
+        ])
+
+    if sheet_name == "EdgeBands":
+        source_rows = _normalise_edgeband_rows(source_rows, headers)
+
+    count = len(source_rows)
+    path_index = headers.index("Path") if "Path" in headers else None
+    for row_values in source_rows:
+        active_edgeband = (
+            sheet_name == "EdgeBands"
+            and path_index is not None
+            and _format_cell_value(row_values[path_index]) != "Archives"
+        )
 
         # Debut du noeud objet
         obj_txt = "\r\n\t\t<" + obj_alias
@@ -743,10 +954,20 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
         in_properties = False  # True si on est dans un bloc <Properties>
         in_layers = False  # True si on est dans un bloc <Layers>
 
-        for j in range(lastcol):
+        column_order = list(range(lastcol))
+        if active_edgeband:
+            # Toutes les colonnes sans tag de sous-noeud sont des attributs
+            # EdgeBand, meme lorsqu'elles se trouvent apres /Properties dans
+            # le classeur. Les ecrire d'abord les garde dans la balise ouvrante.
+            column_order = (
+                [j for j in column_order if tags[j] == ""]
+                + [j for j in column_order if tags[j] != ""]
+            )
+
+        for j in column_order:
             tag = tags[j]
             header = headers[j]
-            raw_val = _resolve_cell_value(ws, i, j + 1)
+            raw_val = row_values[j]
             cur_val = _format_cell_value(raw_val)
 
             # SWOOD attend FiberAngleCorrection en radians, le XLSM stocke des degres
@@ -877,12 +1098,13 @@ def export_xml_materials(xlsm_path: str, output_dir: str = None, log_func=print)
 
     # Assembler le fichier final : entete + Materials + EdgeBands + fermeture
     # La macro VBA concatene les 2 sheets dans le meme fichier
-    full_xml = xml_line1 + "\r\n" + xml_line2
+    full_xml = xml_line1 + "\r\n" + xml_line2 + "\r\n"
     # Extraire le contenu apres l'entete (a partir de \r\n\t<Materials>)
     mat_body = mat_txt.split("\r\n", 2)[2] if "\r\n" in mat_txt else ""
     eb_body = eb_txt.split("\r\n", 2)[2] if "\r\n" in eb_txt else ""
-    full_xml += mat_body + eb_body
+    full_xml += mat_body + "\r\n" + eb_body
     full_xml += "\r\n</SWOODMat>"
+    _validate_xml_document(full_xml)
 
     # Ecriture du fichier
     if output_dir is None:
@@ -919,7 +1141,9 @@ def export_xml_edgebands(xlsm_path: str, output_dir: str = None, log_func=print)
 
     # Assembler le fichier
     eb_body = eb_txt.split("\r\n", 2)[2] if "\r\n" in eb_txt else ""
-    full_xml = xml_line1 + "\r\n" + xml_line2 + eb_body + "\r\n</SWOODMat>"
+    full_xml = (xml_line1 + "\r\n" + xml_line2 + "\r\n" + eb_body
+                + "\r\n</SWOODMat>")
+    _validate_xml_document(full_xml)
 
     # Ecriture du fichier
     if output_dir is None:

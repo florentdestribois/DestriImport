@@ -158,7 +158,7 @@ python export_optiplanning.py Outil_Material_Import.xlsm edgebands
 | AV (48) | Finish | 0 |
 | AW (49) | Glass | 0 |
 
-### Page EdgeBands (23 colonnes)
+### Page EdgeBands (27 colonnes)
 
 | Col. | Attribut | Exemple |
 |---|---|---|
@@ -169,6 +169,15 @@ python export_optiplanning.py Outil_Material_Import.xlsm edgebands
 | E (5) | Cost | 2 |
 | F (6) | Reference | test |
 | G (7) | Thickness | 1 |
+
+Les lignes `Path="Archives"` sont les sources canoniques des quatre listes
+actives `1x23`, `2x23`, `1x43` et `2x43`. L'export conserve ces lignes telles
+qu'elles sont renseignees, reserve leurs ID, reconstruit chaque variante active
+attendue et attribue des ID actifs uniques. Les colonnes sans tag de structure,
+y compris `ShapingID`, `EBAddShape_UserCanChange`,
+`EBAddShape_NotAllowedBehavior` et `EdgebandOverlength`, sont ecrites dans la
+balise ouvrante des EdgeBand actifs meme lorsqu'elles se trouvent apres
+`/Properties` dans la feuille.
 
 ---
 
@@ -209,7 +218,7 @@ export_optiplanning.py
 |
 |-- Dataclasses
 |   |-- MaterialSWOOD      (49 champs - page Materials)
-|   |-- EdgeBandSWOOD       (23 champs - page EdgeBands)
+|   |-- EdgeBandSWOOD       (23 champs historiques - page EdgeBands)
 |
 |-- Lecture XLSM
 |   |-- read_all_materials_from_xlsm()   (49 colonnes)
