@@ -143,6 +143,7 @@ class MaterialSWOOD:
     fournisseur: str = ""
     finish: str = ""
     glass: str = ""
+    quantity: str = ""
     # Champs calcules
     parametres: str = ""
 
@@ -252,6 +253,19 @@ def format_positive_number(value) -> str:
     return f"{meters:g}"
 
 
+def format_board_quantity(value) -> str:
+    """Formate un stock de plaques entier et positif ou nul pour SWOOD.
+
+    Une cellule vide laisse SWOOD appliquer son comportement par defaut. Les
+    quantites negatives, decimales ou non finies sont ignorees plutot que
+    transformees silencieusement.
+    """
+    num = _parse_finite_float(value)
+    if num is None or num < 0 or not num.is_integer():
+        return ""
+    return str(int(num))
+
+
 def _safe_str(value) -> str:
     if value is None:
         return ""
@@ -287,7 +301,7 @@ def _grain_direction(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Lecture XLSM - Page Materials (complete, 49 colonnes)
+# Lecture XLSM - Page Materials (complete, 50 colonnes)
 # ---------------------------------------------------------------------------
 
 def _resolve_cell(ws, row, col):
@@ -310,7 +324,7 @@ def _resolve_cell(ws, row, col):
 
 
 def read_all_materials_from_xlsm(xlsm_path: str, log_func=print) -> List[MaterialSWOOD]:
-    """Lit TOUTES les colonnes de la page Materials (49 colonnes)."""
+    """Lit TOUTES les colonnes de la page Materials (50 colonnes)."""
     log_func(f"Lecture de : {os.path.basename(xlsm_path)} (Materials - complet)")
     wb = openpyxl.load_workbook(xlsm_path, keep_vba=True, data_only=False)
     ws = wb["Materials"]
@@ -369,13 +383,14 @@ def read_all_materials_from_xlsm(xlsm_path: str, log_func=print) -> List[Materia
             fournisseur=_safe_str(_resolve_cell(ws, row, 47)),
             finish=_safe_str(_resolve_cell(ws, row, 48)),
             glass=_safe_str(_resolve_cell(ws, row, 49)),
+            quantity=_safe_str(_resolve_cell(ws, row, 50)),
         )
         mat.parametres = compute_parametres(mat.board_l)
         if not mat.saw_reference:
             mat.saw_reference = compute_saw_reference(mat.name, mat.thickness)
         materials.append(mat)
     wb.close()
-    log_func(f"{len(materials)} materiaux lus (49 colonnes)")
+    log_func(f"{len(materials)} materiaux lus (50 colonnes)")
     return materials
 
 
@@ -616,6 +631,9 @@ def export_xml_boards_nesting(xlsm_path: str, output_dir: str = None, log_func=p
         txt += f' Width="{width_val}"'
         txt += f' Thickness="{thick_val}"'
         txt += f' GrainDirection="{grain}"'
+        quantity = format_board_quantity(mat.quantity)
+        if quantity:
+            txt += f' Quantity="{quantity}"'
         # Cost = surface m2 x prix/m2, omis (pas invente) si le prix
         # source est absent, non numerique, non fini ou negatif.
         cost_m2_str = format_cost(mat.cost)
@@ -980,6 +998,12 @@ def _export_vba_xml_sheet(xlsm_path: str, sheet_name: str, output_dir: str = Non
             header = headers[j]
             raw_val = row_values[j]
             cur_val = _format_cell_value(raw_val)
+
+            # Quantity est une donnee propre aux plaques de nesting. La
+            # colonne reste disponible dans Materials sans devenir un
+            # attribut du XML d'import des materiaux SWOOD.
+            if sheet_name == "Materials" and header == "Quantity":
+                continue
 
             # SWOOD attend FiberAngleCorrection en radians, le XLSM stocke des degres
             if header == "FiberAngleCorrection" and cur_val != "":

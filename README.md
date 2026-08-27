@@ -49,7 +49,7 @@ Les colonnes numeriques 2 a 6 utilisent la virgule comme separateur decimal
 
 | | |
 |---|---|
-| **Source** | Page Materials - 49 colonnes |
+| **Source** | Page Materials - 50 colonnes |
 | **Sortie** | `Plaques_Nesting_YYYYMMDD_HHMMSS.xml` |
 | **Format** | `<SWOODMat><Boards><Board .../></Boards></SWOODMat>` |
 | **Usage** | Import des plaques dans SWOOD Nesting |
@@ -59,6 +59,7 @@ Les colonnes numeriques 2 a 6 utilisent la virgule comme separateur decimal
 - Le **cout par plaque** est calcule automatiquement : `surface_m2 x cout_euro_m2`.
 - L'attribut **Path** est renseigne depuis la colonne correspondante du XLSM.
 - L'attribut **SupplierReference** est renseigne depuis la Reference Fournisseur.
+- L'attribut **Quantity** reprend le stock entier renseigne dans la colonne AX ; il est omis lorsque la cellule est vide ou invalide.
 - Le format XML est genere en texte brut avec indentation par tabulations, identique au format de la macro VBA pour une compatibilite maximale avec l'import SWOOD.
 
 ---
@@ -67,7 +68,7 @@ Les colonnes numeriques 2 a 6 utilisent la virgule comme separateur decimal
 
 | | |
 |---|---|
-| **Source** | Pages Materials (49 col.) + EdgeBands (23 col.) |
+| **Source** | Pages Materials (50 col.) + EdgeBands (23 col.) |
 | **Sortie** | `Import_Swood_Materiaux_YYYYMMDD_HHMMSS.xml` |
 | **Format** | `<SWOODMat><Materials>...</Materials><EdgeBands>...</EdgeBands></SWOODMat>` |
 | **Usage** | Import complet des materiaux et chants dans SWOOD |
@@ -134,7 +135,7 @@ python export_optiplanning.py Outil_Material_Import.xlsm edgebands
 
 ## Structure du fichier Excel source
 
-### Page Materials (49 colonnes)
+### Page Materials (50 colonnes)
 
 | Lignes | Contenu |
 |---|---|
@@ -160,6 +161,7 @@ python export_optiplanning.py Outil_Material_Import.xlsm edgebands
 | AU (47) | Fournisseur | Dispano |
 | AV (48) | Finish | 0 |
 | AW (49) | Glass | 0 |
+| AX (50) | Quantity (stock plaques Nesting) | 10 |
 
 ### Page EdgeBands (27 colonnes)
 
@@ -220,11 +222,11 @@ pyinstaller --onefile --windowed --name Export_Optiplanning --distpath . --clean
 export_optiplanning.py
 |
 |-- Dataclasses
-|   |-- MaterialSWOOD      (49 champs - page Materials)
+|   |-- MaterialSWOOD      (50 champs - page Materials)
 |   |-- EdgeBandSWOOD       (23 champs historiques - page EdgeBands)
 |
 |-- Lecture XLSM
-|   |-- read_all_materials_from_xlsm()   (49 colonnes)
+|   |-- read_all_materials_from_xlsm()   (50 colonnes)
 |   |-- read_materials_from_xlsm()       (colonnes essentielles - TXT)
 |   |-- read_edgebands_from_xlsm()       (23 colonnes)
 |
