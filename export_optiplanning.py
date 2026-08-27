@@ -227,6 +227,17 @@ def format_cost(cost) -> str:
     return f"{num:.2f}"
 
 
+def format_optiplanning_number(value) -> str:
+    """Formate un nombre pour le filtre TXT OptiPlanning francais.
+
+    Les autres exports conservent le point decimal attendu par XML/SWOOD.
+    Seules les colonnes numeriques du TXT utilisent la virgule.
+    """
+    if value is None:
+        return ""
+    return str(value).strip().replace(".", ",")
+
+
 def format_positive_number(value) -> str:
     """Convertit une cote en millimetres vers des metres (sans zeros
     inutiles), pour les attributs XML SWOOD (Length/Width/Thickness).
@@ -496,11 +507,11 @@ def generate_optiplanning_lines(materials: list) -> list:
     for mat in materials:
         cols = [
             mat.saw_reference,
-            mat.board_l,
-            mat.board_w,
-            mat.thickness,
-            mat.fiber_material,
-            mat.cost,
+            format_optiplanning_number(mat.board_l),
+            format_optiplanning_number(mat.board_w),
+            format_optiplanning_number(mat.thickness),
+            format_optiplanning_number(mat.fiber_material),
+            format_optiplanning_number(mat.cost),
             mat.parametres,
             mat.ref_fournisseur,
         ]

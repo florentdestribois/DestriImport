@@ -27,6 +27,9 @@ Developpe pour **Destribois** - Agencement & Menuiserie.
 | **Sortie** | `Materiaux_a_importer_Optiplanning_YYYYMMDD_HHMMSS.txt` |
 | **Format** | 8 colonnes separees par tabulation |
 
+Les colonnes numeriques 2 a 6 utilisent la virgule comme separateur decimal
+(`0,8`, `6,50`, `0,00`). Les noms, parametres et references restent inchanges.
+
 **Colonnes exportees :**
 
 | # | Colonne | Description |
